@@ -3,8 +3,6 @@ import { URL } from 'url';
 import { alipaySdk, RedisCacheProvider } from '../../src/lib/sdk';
 import { Redis } from 'ioredis';
 
-// Token for validation (replace with your actual token)
-const TOKEN: string = process.env.VITE_ALIPAY_TOKEN || 'abcdef';
 
 const routes = {
   'POST /alipay': async (req, res) => {
@@ -15,6 +13,7 @@ const routes = {
     req.on('end', async () => {
       const params = new URLSearchParams(body);
       const sdk = alipaySdk({
+        endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
         appId: process.env.VITE_ALIPAY_APP_ID || '',
         privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
         alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
@@ -34,6 +33,7 @@ const routes = {
   },
   'GET /alipay': async (req, res) => {
     const sdk = alipaySdk({
+      endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
       appId: process.env.VITE_ALIPAY_APP_ID || '',
       privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
       alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
@@ -42,15 +42,15 @@ const routes = {
 
     const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay', 'GET', {
       bizContent: {
-        out_trade_no: 'your-order-id',
-        product_code: 'FAST_INSTANT_TRADE_PAY',
-        total_amount: '10.00',
-        subject: 'Test Order',
+        out_trade_no: "20250320010101001",
+        total_amount: "88.88",
+        subject: "Iphone6+16G",
+        product_code: "FAST_INSTANT_TRADE_PAY",
       },
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`<a href="${paymentUrl}">Pay Now</a>`);
+    res.end(`<a href="${paymentUrl}" target="_blank">Pay Now</a>`);
   },
 };
 

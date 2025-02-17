@@ -16,6 +16,12 @@ interface AlipaySDKConfig {
   endpoint?: string;
   /** 网关超时时间（单位毫秒，默认 5000） */
   timeout?: number;
+  /**
+   * 指定 private key 类型, 默认：PKCS1
+   * - PKCS8: PRIVATE KEY
+   * - PKCS1: RSA PRIVATE KEY
+   */
+  keyType?: 'PKCS1' | 'PKCS8';
   cacheProvider: CacheProvider;
   customResponseTransformer?: (response: any) => any;
   authCheckStatus?: (status: number, response: any) => boolean;
@@ -50,6 +56,7 @@ export function createAlipaySignature(
   privateKey: string,
   signType: AlipaySdkSignType = 'RSA2'
 ): string {
+  console.log('createAlipaySignature', params, privateKey, signType)
   // 参数排序并格式化为 key=value 格式
   const sortedParams = Object.keys(params)
     .sort()
@@ -64,13 +71,14 @@ export function createAlipaySignature(
 
   // 创建签名对象
   const signer = createSign(signType === 'RSA2' ? 'RSA-SHA256' : 'RSA-SHA1');
-  signer.update(paramStr, 'utf8');
-
-  // 生成Base64签名
-  return signer.sign(privateKey, 'base64')
-    .replace(/\n/g, '')     // 移除换行符
-    .replace(/\+/g, '-')    // URL安全处理
-    .replace(/\//g, '_');
+  try {
+    signer.update(paramStr, 'utf8');
+    // 生成Base64签名
+    return signer.sign(privateKey, 'base64');
+  } catch (error) {
+    console.error('Error creating signature:', error);
+    throw new Error('Unsupported private key format or other signing error');
+  }
 }
 
 const encryptAndSignature = async (config: any, options: any) => {
@@ -97,9 +105,54 @@ const encryptAndSignature = async (config: any, options: any) => {
   return options
 }
 
+const formatDate = (date: Date) => {
+  const pad = (n: number) => (n < 10 ? '0' + n : n);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
+
+const getSignatureFields = (config: any, method: string, bizParams: any) => {
+  let fields =  {
+    app_id: config.appId,
+    method: method,
+    charset: 'UTF-8',
+    sign_type: config.signType || 'RSA2',
+    timestamp: formatDate(new Date()),
+    version: '1.0',
+    biz_content: JSON.stringify(bizParams.bizContent),
+    // notify_url: config.notifyUrl,
+    // return_url: config.returnUrl,
+  } as Record<string, any>;
+  // filter underfiend
+
+  return fields
+}
+
+const defualtEndpoint = 'https://openapi.alipay.com';
+
+const formatKey = (key: string, type: string): string => {
+  const item = key.split('\n').map(val => val.trim());
+
+  // 删除包含 `RSA PRIVATE KEY / PUBLIC KEY` 等字样的第一行
+  if (item[0].includes(type)) { item.shift(); }
+
+  // 删除包含 `RSA PRIVATE KEY / PUBLIC KEY` 等字样的最后一行
+  if (item[item.length - 1].includes(type)) {
+    item.pop();
+  }
+
+  return `-----BEGIN ${type}-----\n${item.join('')}\n-----END ${type}-----`;
+}
+
 export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
+  const privateKeyType = config.keyType === 'PKCS8' ? 'PRIVATE KEY' : 'RSA PRIVATE KEY';
+  config.privateKey = formatKey(config.privateKey, privateKeyType);
+
+  if (config.alipayPublicKey) {
+    config.alipayPublicKey = formatKey(config.alipayPublicKey, 'PUBLIC KEY');
+  }
+
   const sdkConfig: SdkBuilderConfig = {
-    baseUrl: config.endpoint || 'https://openapi.alipay.com',
+    baseUrl: config.endpoint || defualtEndpoint,
     cacheProvider: config.cacheProvider,
     placeholders: {
       access_token: '{access_token}',
@@ -110,7 +163,7 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
       signType: config.signType || 'RSA2',
       alipayPublicKey: config.alipayPublicKey,
       timeout: config.timeout || 5000,
-      endpoint: config.endpoint || 'https://openapi.alipay.com',
+      endpoint: config.endpoint || defualtEndpoint,
     },
     customResponseTransformer: config.customResponseTransformer || ((response: any) => {
       return response;
@@ -136,15 +189,8 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
   sdk.rx('execute', async (config, method: string, params: Record<string, any>) => {
     const signedParams = {
       ...params,
-      app_id: config.appId,
-      method: method,
-      charset: config.charset || 'UTF-8',
-      sign_type: config.signType || 'RSA2',
-      timestamp: new Date().toISOString(),
-      version: config.version || '1.0',
-      notify_url: config.notifyUrl,
-      return_url: config.returnUrl,
-    } as Record<string, any>;
+      ...getSignatureFields(config, method, params),
+    };
     signedParams.sign = signer(signedParams);
     const response = await sdk.post('/gateway.do', params, signedParams);
     return response;
@@ -165,32 +211,26 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     }
     if (!httpMethod && bizParams?.method) {
       httpMethod = bizParams.method;
+      delete bizParams.method;
     }
 
     const signParams = {
+      ...getSignatureFields(config, method, bizParams),
       alipaySdk: 'alipay-sdk',
-      app_id: config.appId,
-      method: method,
-      charset: 'utf-8',
-      sign_type: config.signType || 'RSA2',
-      timestamp: new Date().toISOString(),
-      version: '1.0',
-      notify_url: config.notifyUrl,
-      return_url: config.returnUrl,
-     } as Record<string, string>;
+    } as Record<string, string>;
     const signData = signer(signParams);
     const url = `${config.endpoint}/gateway.do`;
-    const { method: x, ...ebizParams } = bizParams || {};
+    const { method: x, bizContent, ...ebizParams } = bizParams || {};
     const execParams = {
       ...signParams,
-      bizParams: JSON.stringify(ebizParams),
+      biz_content: JSON.stringify(bizContent),
       sign: signData,
     } as Record<string, string>;
     if (httpMethod === 'GET') {
       const query = Object.keys(execParams).map(key => {
         return `${key}=${encodeURIComponent(execParams[key])}`;
       });
-      return `${url}&${query.join('&')}`;
+      return `${url}?${query.join('&')}`;
     }
 
     const formName = `alipaySDKSubmit${Date.now()}`;
