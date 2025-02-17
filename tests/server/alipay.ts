@@ -3,6 +3,13 @@ import { URL } from 'url';
 import { alipaySdk, RedisCacheProvider } from '../../src/lib/sdk';
 import { Redis } from 'ioredis';
 
+const sdk = alipaySdk({
+  endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
+  appId: process.env.VITE_ALIPAY_APP_ID || '',
+  privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
+  alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
+  cacheProvider: new RedisCacheProvider(new Redis()),
+});
 
 const routes = {
   'POST /notify/alipay': async (req, res) => {
@@ -12,14 +19,6 @@ const routes = {
     });
     req.on('end', async () => {
       const params = new URLSearchParams(body);
-      const sdk = alipaySdk({
-        endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
-        appId: process.env.VITE_ALIPAY_APP_ID || '',
-        privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
-        alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
-        cacheProvider: new RedisCacheProvider(new Redis()),
-      });
-
       const isValid = await sdk.checkNotifySign(Object.fromEntries(params));
       if (isValid) {
         // Handle the notification
@@ -31,15 +30,7 @@ const routes = {
       }
     });
   },
-  'GET /alipay': async (req, res) => {
-    const sdk = alipaySdk({
-      endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
-      appId: process.env.VITE_ALIPAY_APP_ID || '',
-      privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
-      alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
-      cacheProvider: new RedisCacheProvider(new Redis()),
-    });
-
+  'GET /get/alipay': async (req, res) => {
     const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay', 'GET', {
       bizContent: {
         out_trade_no: "20250320010101001",
@@ -53,13 +44,6 @@ const routes = {
     res.end(`<a href="${paymentUrl}" target="_blank">Pay Now</a>`);
   },
   'GET /post/alipay': async (req, res) => {
-    const sdk = alipaySdk({
-      endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
-      appId: process.env.VITE_ALIPAY_APP_ID || '',
-      privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
-      alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
-      cacheProvider: new RedisCacheProvider(new Redis()),
-    });
 
     const formHtml = await sdk.pageExecute('alipay.trade.page.pay', 'POST', {
       bizContent: {
@@ -72,7 +56,45 @@ const routes = {
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(formHtml);
-  }
+  },
+  'GET /curl/alipay': async (req, res) => {
+    try {
+      const response = await sdk.curl('POST', '/v3/alipay/trade/pay', {
+        body: {
+          "out_trade_no": "20250320010101001",
+          "total_amount": "88.88",
+          "subject": "Iphone6 16G",
+          // 二维码
+          "auth_code": "281455750297812236",
+          "scene": "bar_code"
+        }
+      });
+
+      console.log(response)
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } catch (error) {
+      console.log(error)
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Error executing curl request');
+    }
+  },
+  'GET /exec/alipay': async (req, res) => {
+    const params = {
+      bizContent: {
+        out_trade_no: "20150320010101001",
+        total_amount: "88.88",
+        subject: "Iphone6 16G",
+        auth_code: "28763443825664394",
+        scene: "bar_code",
+      },
+    };
+    // console.log('Request params:', params); // Add this line to log the request parameters
+    const response = await sdk.exec("alipay.trade.pay", params);
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response));
+  },
 };
 
 // Handle incoming requests

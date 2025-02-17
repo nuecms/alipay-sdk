@@ -1,5 +1,5 @@
-import { sdkBuilder, SdkBuilderConfig, RedisCacheProvider, CacheProvider } from '@nuecms/sdk-builder';
-import { createSign, createVerify } from 'crypto';
+import { sdkBuilder, SdkBuilderConfig, RedisCacheProvider, CacheProvider } from '@nuecms/sdk-builder/src/index';
+import { createSign, createVerify, randomUUID } from 'crypto';
 
 export type AlipaySdkSignType = 'RSA2' | 'RSA';
 
@@ -51,6 +51,13 @@ export interface IPageExecuteParams extends IRequestParams {
   method?: IPageExecuteMethod;
 }
 
+
+export function signature(algorithm: string, signString: string, privateKey: string) {
+  return createSign(algorithm)
+    .update(signString, 'utf-8')
+    .sign(privateKey, 'base64');
+}
+
 export function createAlipaySignature(
   params: SignParams,
   privateKey: string,
@@ -60,30 +67,37 @@ export function createAlipaySignature(
   const sortedParams = Object.keys(params)
     .sort()
     .map((key) => {
-      const value = typeof params[key] === 'object'
+      const value = Array.prototype.toString.call(params[key]) !== '[object String]'
         ? JSON.stringify(params[key])
         : params[key];
       return `${key}=${value}`;
     });
 
   const paramStr = sortedParams.join('&');
-
-  // 创建签名对象
-  const signer = createSign(signType === 'RSA2' ? 'RSA-SHA256' : 'RSA-SHA1');
   try {
-    signer.update(paramStr, 'utf8');
-    // 生成Base64签名
-    return signer.sign(privateKey, 'base64');
+    return signature(signType === 'RSA2' ? 'RSA-SHA256' : 'RSA-SHA1', paramStr, privateKey);
   } catch (error) {
     console.error('Error creating signature:', error);
     throw new Error('Unsupported private key format or other signing error');
   }
 }
 
+export function signatureV3(signString: string, appPrivateKey: string) {
+  return signature('RSA-SHA256', signString, appPrivateKey);
+}
+
+const formatDate = (date: Date) => {
+  const pad = (n: number) => (n < 10 ? '0' + n : n);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
+
+const createRequestId = () => {
+  return randomUUID().replace(/-/g, '');
+}
+
 const encryptAndSignature = async (config: any, options: any) => {
-  const requestId = options?.requestId ?? Math.random().toString(36).substring(7);
+  const requestId = options?.requestId ?? createRequestId();
   let headers = {
-    'user-agent': 'alipay-sdk',
     'alipay-request-id': requestId,
     accept: 'application/json',
   } as any
@@ -92,10 +106,9 @@ const encryptAndSignature = async (config: any, options: any) => {
   const httpRequestUrl = options.path;
 
   const httpRequestBody = options?.body ? JSON.stringify(options.body) : '';
-
-  const authString = `app_id=${config.appId},nonce=${Math.random().toString(36).substring(7)},timestamp=${Date.now()}`;
+  const authString = `app_id=${config.appId},nonce=${randomUUID()},timestamp=${Date.now()}`;
   let signString = `${authString}\n${httpMethod}\n${httpRequestUrl}\n${httpRequestBody}\n`;
-  const signature = createAlipaySignature({ signString }, config.privateKey, config.signType);
+  const signature = signatureV3(signString, config.privateKey);
   const authorization = `ALIPAY-SHA256withRSA ${authString},sign=${signature}`;
   headers.authorization = authorization;
 
@@ -103,10 +116,6 @@ const encryptAndSignature = async (config: any, options: any) => {
   return options
 }
 
-const formatDate = (date: Date) => {
-  const pad = (n: number) => (n < 10 ? '0' + n : n);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-};
 
 const getSignatureFields = (config: any, method: string, bizParams: any) => {
   let fields =  {
@@ -116,9 +125,7 @@ const getSignatureFields = (config: any, method: string, bizParams: any) => {
     sign_type: config.signType || 'RSA2',
     timestamp: formatDate(new Date()),
     version: '1.0',
-    biz_content: JSON.stringify(bizParams.bizContent),
-    // notify_url: config.notifyUrl,
-    // return_url: config.returnUrl,
+    ...bizParams
   } as Record<string, any>;
   // filter underfiend
 
@@ -137,8 +144,22 @@ const formatKey = (key: string, type: string): string => {
   if (item[item.length - 1].includes(type)) {
     item.pop();
   }
-
   return `-----BEGIN ${type}-----\n${item.join('')}\n-----END ${type}-----`;
+}
+
+const customResponseTransformer = (response: any, context: any) => {
+  let alipayResponse: Record<string, any>;
+  const method = context.params.method;
+
+  try {
+    alipayResponse = JSON.parse(response);
+  } catch (err) {
+    throw new Error('Response data parsing error');
+  }
+
+  const responseKey = `${method.replaceAll('.', '_')}_response`;
+  let data = alipayResponse[responseKey] ?? alipayResponse.error_response;
+  return data
 }
 
 export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
@@ -163,11 +184,9 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
       timeout: config.timeout || 5000,
       endpoint: config.endpoint || defualtEndpoint,
     },
-    customResponseTransformer: config.customResponseTransformer || ((response: any) => {
-      return response;
-    }),
-    authCheckStatus: config.authCheckStatus || ((status, response) => {
-      return status === 401 || ((response as any)?.code === '40001');
+    customResponseTransformer: config.customResponseTransformer || customResponseTransformer,
+    authCheckStatus: config.authCheckStatus || ((status, response, context) => {
+      return false;
     })
   };
 
@@ -177,27 +196,35 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
 
   sdk.rx('reqInterceptor', async (config, params?: {}) => {
     const options = params as any;
+    console.log('reqInterceptor options', options)
     // if is v3 url then encrypt and signature
     if (options.path.startsWith('/v3/')) {
-      return encryptAndSignature(config, options);
+      let x =  encryptAndSignature(config, options);
+      console.log(x)
+      return x;
     }
     return options;
   });
 
-  sdk.rx('execute', async (config, method: string, params: Record<string, any>) => {
-    const signedParams = {
-      ...params,
-      ...getSignatureFields(config, method, params),
+  sdk.rx('exec', async (config, method: string, params: Record<string, any>) => {
+    let signedParams = {
+      ...getSignatureFields(config, method, {
+        format: 'JSON',
+        biz_content: JSON.stringify(params?.bizContent)
+      }),
     };
     signedParams.sign = signer(signedParams);
-    const response = await sdk.post('/gateway.do', params, signedParams);
-    return response;
+    signedParams.biz_content = JSON.stringify(params.bizContent)
+    const { biz_content, ...execParams } = signedParams;
+    const body = {
+      biz_content
+    }
+    return sdk.post('/gateway.do', body, execParams);
   });
 
   sdk.rx('curl', async (config, httpMethod: string, path: string, options?: any) => {
     httpMethod = httpMethod.toUpperCase();
-    const response = await sdk.callApiWithoutEndpoint(path, httpMethod, options.body, options.query);
-    return response;
+    return sdk.callApiWithoutEndpoint(path, httpMethod, options?.body, options.query);
   });
 
   sdk.rx('pageExecute', async (config, method: string, httpMethodOrParams: IPageExecuteMethod | IPageExecuteParams, bizParams?: IPageExecuteParams) => {
@@ -213,7 +240,9 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     }
 
     const signParams = {
-      ...getSignatureFields(config, method, bizParams),
+      ...getSignatureFields(config, method, {
+        biz_content: JSON.stringify(bizParams?.bizContent)
+      }),
       alipaySdk: 'alipay-sdk',
     } as Record<string, string>;
     const signData = signer(signParams);
@@ -221,7 +250,6 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     const { method: x, bizContent, ...ebizParams } = bizParams || {};
     const execParams = {
       ...signParams,
-      biz_content: JSON.stringify(bizContent),
       sign: signData,
     } as Record<string, string>;
     if (httpMethod === 'GET') {
