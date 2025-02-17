@@ -56,7 +56,6 @@ export function createAlipaySignature(
   privateKey: string,
   signType: AlipaySdkSignType = 'RSA2'
 ): string {
-  console.log('createAlipaySignature', params, privateKey, signType)
   // 参数排序并格式化为 key=value 格式
   const sortedParams = Object.keys(params)
     .sort()
@@ -101,7 +100,6 @@ const encryptAndSignature = async (config: any, options: any) => {
   headers.authorization = authorization;
 
   options.headers = Object.assign(options.headers, headers)
-
   return options
 }
 

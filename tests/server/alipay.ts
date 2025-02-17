@@ -5,7 +5,7 @@ import { Redis } from 'ioredis';
 
 
 const routes = {
-  'POST /alipay': async (req, res) => {
+  'POST /notify/alipay': async (req, res) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
@@ -52,6 +52,27 @@ const routes = {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(`<a href="${paymentUrl}" target="_blank">Pay Now</a>`);
   },
+  'GET /post/alipay': async (req, res) => {
+    const sdk = alipaySdk({
+      endpoint: 'https://openapi-sandbox.dl.alipaydev.com',
+      appId: process.env.VITE_ALIPAY_APP_ID || '',
+      privateKey: process.env.VITE_ALIPAY_PRIVATE_KEY || '',
+      alipayPublicKey: process.env.VITE_ALIPAY_PUBLIC_KEY || '',
+      cacheProvider: new RedisCacheProvider(new Redis()),
+    });
+
+    const formHtml = await sdk.pageExecute('alipay.trade.page.pay', 'POST', {
+      bizContent: {
+        out_trade_no: "20250320010101001",
+        total_amount: "88.88",
+        subject: "Iphone6+16G PostTest",
+        product_code: "FAST_INSTANT_TRADE_PAY",
+      },
+    });
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(formHtml);
+  }
 };
 
 // Handle incoming requests

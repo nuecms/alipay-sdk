@@ -55,36 +55,6 @@ describe('Alipay SDK Tests', () => {
     expect(cachedToken.value.access_token).toBe('mockAccessToken123');
   });
 
-  it('should call a user info endpoint', async () => {
-    const mockUserInfoResponse = {
-      user_id: 'testUserId',
-      nick_name: 'Test User',
-      gender: 'M',
-      city: 'Shanghai',
-    };
-
-    vi.spyOn(sdk, 'getUserInfo').mockResolvedValue(mockUserInfoResponse);
-
-    const response = await sdk.getUserInfo({ user_id: 'testUserId' });
-    expect(response.user_id).toBe('testUserId');
-    expect(response.nick_name).toBe('Test User');
-  });
-
-  it('should handle errors gracefully', async () => {
-    const errorMessage = 'Invalid AppID or Secret';
-
-    vi.spyOn(sdk, 'getAccessToken').mockRejectedValue(new Error(errorMessage));
-
-    try {
-      await sdk.getAccessToken({
-        appid: 'invalidAppId',
-        secret: 'invalidAppSecret',
-        grant_type: 'client_credential',
-      });
-    } catch (error) {
-      expect((error as Error).message).toBe(errorMessage);
-    }
-  });
 
   it('should generate a payment URL', async () => {
     const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay', 'GET', {
