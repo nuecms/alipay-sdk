@@ -16,7 +16,13 @@ export default defineConfig({
       }
     },
     rollupOptions: {
-      external: ['ioredis', 'cross-fetch', '@nuecms/sdk-builder'], // Mark dependencies as external
+      external: [
+        'ioredis',
+        'cross-fetch',
+        '@nuecms/sdk-builder',
+        'crypto',
+        'util'
+      ], // Mark dependencies as external
       output: {
         globals: {
           'cross-fetch': 'fetch',           // Use fetch in the browser
