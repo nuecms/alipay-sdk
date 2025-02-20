@@ -30,6 +30,15 @@ const routes = {
       }
     });
   },
+  'GET /return/alipay': async (req, res) => {
+    // 可实现支付成功后跳转到商家页面的功能，而且跳转后的 return_url 页面的地址栏中会返回同步通知参数。
+    // log  通知参数
+    const url = new URL(req.url);
+    const params = Object.fromEntries(url.searchParams);
+    console.log(params);
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(JSON.stringify(params));
+  },
   'GET /get/alipay': async (req, res) => {
     const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay',{
       method: 'GET',
@@ -39,7 +48,7 @@ const routes = {
         subject: "Iphone6+16G url",
         product_code: "FAST_INSTANT_TRADE_PAY",
       },
-      returnUrl: 'http://localhost:3000/return/alipay',
+      returnUrl: 'http://alipay-sdk-test.nuecms.com/return/alipay',
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -53,7 +62,7 @@ const routes = {
         subject: "Iphone6+16G P XXX",
         product_code: "FAST_INSTANT_TRADE_PAY",
       },
-      returnUrl: 'http://localhost:3000/return/alipay',
+      returnUrl: 'http://alipay-sdk-test.nuecms.com/return/alipay',
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });

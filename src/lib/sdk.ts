@@ -358,6 +358,7 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
       ...getSignatureFields(config, method, {
         biz_content: JSON.stringify(bizParams?.bizContent),
         return_url: bizParams?.returnUrl,
+        notify_url: bizParams?.notifyUrl
       }),
       alipaySdk: sdkName,
     } as Record<string, string>;
