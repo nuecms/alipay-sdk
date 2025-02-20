@@ -1,4 +1,4 @@
-import { sdkBuilder, SdkBuilderConfig, FetchContext, RedisCacheProvider, CacheProvider } from '@nuecms/sdk-builder/src/index';
+import { sdkBuilder, SdkBuilderConfig, FetchContext, RedisCacheProvider, CacheProvider } from '@nuecms/sdk-builder';
 import { signature, getSignStr, signatureV3, aesEncrypt, aesEncryptText, aesDecrypt, aesDecryptText } from './sign'; // Fix import
 import { createVerify, randomUUID } from 'crypto';
 import { debuglog } from 'util';
