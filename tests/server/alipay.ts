@@ -37,7 +37,7 @@ const routes = {
         total_amount: "88.88",
         subject: "Iphone6+16G",
         product_code: "FAST_INSTANT_TRADE_PAY",
-      },
+      }
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });

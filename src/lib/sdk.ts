@@ -27,6 +27,8 @@ interface AlipaySDKConfig {
   keyType?: 'PKCS1' | 'PKCS8';
   /** AES 密钥，调用 AES 加解密相关接口时需要 */
   encryptKey?: string;
+  /** 最大重试次数，默认 0 */
+  maxRetries?: number;
   cacheProvider?: CacheProvider;
   customResponseTransformer?: (response: any) => any;
   authCheckStatus?: (status: number, response: any) => boolean;
@@ -247,7 +249,7 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     placeholders: {
       access_token: '{access_token}',
     },
-    maxRetries: 0,
+    maxRetries: config.maxRetries ?? 0,
     config: {
       appId: config.appId,
       privateKey: config.privateKey,
