@@ -1,6 +1,6 @@
 {
   "name": "@nuecms/alipay-sdk",
-  "version": "0.1.3",
+  "version": "1.0.0",
   "description": "A flexible and lightweight Alipay SDK for Node.js",
   "type": "module",
   "main": "dist/index.js",
