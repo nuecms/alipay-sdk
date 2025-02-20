@@ -31,13 +31,15 @@ const routes = {
     });
   },
   'GET /get/alipay': async (req, res) => {
-    const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay', 'GET', {
+    const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay',{
+      method: 'GET',
       bizContent: {
-        out_trade_no: "202503121220010101001",
+        out_trade_no: "202503121220010101201",
         total_amount: "88.88",
-        subject: "Iphone6+16G",
+        subject: "Iphone6+16G url",
         product_code: "FAST_INSTANT_TRADE_PAY",
-      }
+      },
+      returnUrl: 'http://localhost:3000/return/alipay',
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -46,11 +48,12 @@ const routes = {
   'GET /post/alipay': async (req, res) => {
     const formHtml = await sdk.pageExecute('alipay.trade.page.pay', 'POST', {
       bizContent: {
-        out_trade_no: "202503111120010101001",
+        out_trade_no: "202503111120010101003",
         total_amount: "88.88",
-        subject: "Iphone6+16G PostTest",
+        subject: "Iphone6+16G P XXX",
         product_code: "FAST_INSTANT_TRADE_PAY",
       },
+      returnUrl: 'http://localhost:3000/return/alipay',
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });

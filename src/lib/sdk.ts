@@ -56,6 +56,7 @@ export type IPageExecuteMethod = 'GET' | 'POST';
 
 export interface IPageExecuteParams extends IRequestParams {
   method?: IPageExecuteMethod;
+  returnUrl?: string;
 }
 
 
@@ -172,6 +173,12 @@ const getSignatureFields = (config: any, method: string, bizParams: any) => {
     timestamp: formatDate(new Date()),
     ...bizParams
   } as Record<string, any>;
+  // filter undefined
+  Object.keys(fields).forEach(key => {
+    if (fields[key] === undefined) {
+      delete fields[key];
+    }
+  });
   return fields
 }
 
@@ -349,7 +356,8 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
 
     const signParams = {
       ...getSignatureFields(config, method, {
-        biz_content: JSON.stringify(bizParams?.bizContent)
+        biz_content: JSON.stringify(bizParams?.bizContent),
+        return_url: bizParams?.returnUrl,
       }),
       alipaySdk: sdkName,
     } as Record<string, string>;
