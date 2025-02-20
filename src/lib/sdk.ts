@@ -288,7 +288,10 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
   });
 
   sdk.rx('exec', async (config, method: string, params: Record<string, any>, options?: Record<string, any>) => {
-    let bizParams = {} as Record<string, any>;
+    let bizParams = {
+      return_url: params?.returnUrl,
+      notify_url: params?.notifyUrl
+    } as Record<string, any>;
     if (params.needEncrypt) {
       if (!config.encryptKey) {
         throw new TypeError('请设置 encryptKey 参数');
