@@ -1,5 +1,10 @@
-import http, { IncomingMessage, ServerResponse } from 'http';
+import http, { IncomingMessage as HttpIncomingMessage, ServerResponse } from 'http';
+
+interface IncomingMessage extends HttpIncomingMessage {
+  body?: any;
+}
 import { URL } from 'url';
+import querystring from 'querystring';
 
 import { alipaySdk } from '../../src/lib/sdk';
 
@@ -13,27 +18,16 @@ const sdk = alipaySdk({
 
 const routes = {
   'POST /notify/alipay': async (req, res) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-    req.on('end', async () => {
-      const params = new URLSearchParams(body);
-      const isValid = await sdk.checkNotifySign(Object.fromEntries(params));
-      if (isValid) {
-        // Handle the notification
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('success');
-      } else {
-        res.writeHead(400, { 'Content-Type': 'text/plain' });
-        res.end('invalid sign');
-      }
-    });
+    // log 通知参数
+    const params = req.body;
+    console.log(params);
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('success');
   },
   'GET /return/alipay': async (req, res) => {
     // 可实现支付成功后跳转到商家页面的功能，而且跳转后的 return_url 页面的地址栏中会返回同步通知参数。
     // log  通知参数
-    const url = new URL(req.url);
+    const url = new URL(req.url, 'http://localhost:3000');
     const params = Object.fromEntries(url.searchParams);
     console.log(params);
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -43,12 +37,13 @@ const routes = {
     const paymentUrl = await sdk.pageExecute('alipay.trade.page.pay',{
       method: 'GET',
       bizContent: {
-        out_trade_no: "202503121220010101201",
+        out_trade_no: "202503121220010101901",
         total_amount: "88.88",
-        subject: "Iphone6+16G url",
+        subject: "Iphone6+16G Notify",
         product_code: "FAST_INSTANT_TRADE_PAY",
       },
-      returnUrl: 'http://alipay-sdk-test.nuecms.com/return/alipay',
+      returnUrl: 'https://alipay-sdk-test.nuecms.com/return/alipay',
+      notifyUrl: 'https://alipay-sdk-test.nuecms.com/notify/alipay',
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -62,7 +57,7 @@ const routes = {
         subject: "Iphone6+16G P XXX",
         product_code: "FAST_INSTANT_TRADE_PAY",
       },
-      returnUrl: 'http://alipay-sdk-test.nuecms.com/return/alipay',
+      returnUrl: 'https://alipay-sdk-test.nuecms.com/return/alipay',
     });
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -72,12 +67,14 @@ const routes = {
     try {
       const response = await sdk.curl('POST', '/v3/alipay/trade/pay', {
         body: {
-          "out_trade_no": "20250320221010101001",
+          "out_trade_no": "20250320221010105001",
           "total_amount": "88.88",
-          "subject": "Iphone6 16G",
+          "subject": "Iphone16 32G",
           // 二维码
-          "auth_code": "287960314702463767",
-          "scene": "bar_code"
+          "auth_code": "285270892018294327",
+          "scene": "bar_code",
+          notify_url: 'https://alipay-sdk-test.nuecms.com/notify/alipay',
+
         }
       });
       console.log(response)
@@ -154,15 +151,63 @@ const routes = {
 
 // Handle incoming requests
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
-  for (const [key, value] of Object.entries(routes)) {
-    const [method, path] = key.split(' ');
-    if (req.method === method && req.url?.startsWith(path)) {
-      value(req, res);
-      return;
+  if (req.method === 'POST') {
+    let body = '';
+
+    // Listen for data
+    req.on('data', (chunk) => {
+      body += chunk.toString(); // Convert Buffer to string
+    });
+
+    // Listen for end of data
+    req.on('end', async () => {
+      try {
+        // Parse data based on Content-Type
+        const contentType = req.headers['content-type'];
+
+        let parsedData;
+        if (contentType === 'application/json') {
+          parsedData = JSON.parse(body);
+        } else if (contentType === 'application/x-www-form-urlencoded') {
+          parsedData = querystring.parse(body);
+        } else {
+          parsedData = body; // Return raw string for other types
+        }
+
+        // Attach parsed data to req.body
+        req.body = parsedData;
+
+        // Route the request
+        for (const [key, value] of Object.entries(routes)) {
+          const [method, path] = key.split(' ');
+          if (req.method === method && req.url?.startsWith(path)) {
+            return value(req, res);
+          }
+        }
+
+        // Handle not found
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      } catch (error) {
+        // Handle parsing error
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid data format' }));
+      }
+    });
+  } else {
+    // Route the request
+    for (const [key, value] of Object.entries(routes)) {
+      const [method, path] = key.split(' ');
+      if (req.method === method && req.url?.startsWith(path)) {
+        value(req, res);
+        return;
+      }
     }
+
+    // Handle not found
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
   }
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end('Not Found');
 }
 
 // Create and start the server
