@@ -1,5 +1,6 @@
 import { sdkBuilder, SdkBuilderConfig, FetchContext, RedisCacheProvider, CacheProvider } from '@nuecms/sdk-builder/src/index';
-import { createSign, createVerify, randomUUID, createCipheriv, createDecipheriv } from 'crypto'; // Updated import
+import { signature, getSignStr, signatureV3, aesEncrypt, aesEncryptText, aesDecrypt, aesDecryptText } from './sign'; // Fix import
+import { createVerify, randomUUID } from 'crypto';
 import { debuglog } from 'util';
 const debug = debuglog('alipay-sdk');
 
@@ -56,10 +57,26 @@ export interface IPageExecuteParams extends IRequestParams {
 }
 
 
-export function signature(algorithm: string, signString: string, privateKey: string): string {
-  return createSign(algorithm)
-    .update(signString, 'utf-8')
-    .sign(privateKey, 'base64');
+
+/**
+ * 格式化参数
+ * @param params
+ * @param raw
+ * @returns
+ */
+function formatParams(params: Record<string, any>, raw: boolean = true): string {
+  return Object.keys(params).sort()
+    .map(key => {
+      let data = params[key];
+      if (Array.prototype.toString.call(data) !== '[object String]') {
+        data = JSON.stringify(data);
+      }
+      if (raw) {
+        return `${key}=${data}`;
+      }
+      return `${key}=${decodeURIComponent(data)}`;
+    })
+    .join('&');
 }
 
 export function createAlipaySignature(
@@ -67,16 +84,7 @@ export function createAlipaySignature(
   privateKey: string,
   signType: AlipaySdkSignType = 'RSA2'
 ): string {
-  // 参数排序并格式化为 key=value 格式
-    const signString = Object.keys(params).sort()
-    .map(key => {
-      let data = params[key];
-      if (Array.prototype.toString.call(data) !== '[object String]') {
-        data = JSON.stringify(data);
-      }
-      return `${key}=${data}`;
-    })
-    .join('&');
+  const signString = formatParams(params);
   try {
     return signature(signType === 'RSA2' ? 'RSA-SHA256' : 'RSA-SHA1', signString, privateKey);
   } catch (error) {
@@ -85,78 +93,6 @@ export function createAlipaySignature(
   }
 }
 
-export function signatureV3(signString: string, appPrivateKey: string) {
-  return signature('RSA-SHA256', signString, appPrivateKey);
-}
-
-/**
- * 解析 AES 密钥和全零 IV
- * @param aesKey Base64 编码的 AES 密钥
- */
-function parseKey(aesKey: string) {
-  const keyBuffer = Buffer.from(aesKey, 'base64');
-  const keyLength = keyBuffer.length;
-  // 根据密钥长度确定算法名称 (AES-128/192/256)
-  if (keyLength !== 16 && keyLength !== 24 && keyLength !== 32) {
-    throw new Error('Invalid AES key length (must be 16/24/32 bytes)');
-  }
-  const algorithm = `aes-${keyLength * 8}-cbc`;
-  // 16 字节全零 IV
-  const iv = Buffer.alloc(16, 0);
-  return { algorithm, key: keyBuffer, iv };
-}
-
-/**
- * AES 加密文本
- * @param plainText 明文
- * @param aesKey Base64 编码的 AES 密钥
- */
-export function aesEncryptText(plainText: string, aesKey: string): string {
-  const { algorithm, key, iv } = parseKey(aesKey);
-
-  const cipher = createCipheriv(algorithm, key, iv);
-  cipher.setAutoPadding(true); // 启用 PKCS7 填充 (对应 Java 的 PKCS5)
-
-  let encrypted = cipher.update(plainText, 'utf8');
-  encrypted = Buffer.concat([encrypted, cipher.final()]);
-  return encrypted.toString('base64');
-}
-
-/**
- * AES 解密文本
- * @param encryptedText Base64 编码的密文
- * @param aesKey Base64 编码的 AES 密钥
- */
-export function aesDecryptText(encryptedText: string, aesKey: string): string {
-  const { algorithm, key, iv } = parseKey(aesKey);
-
-  const decipher = createDecipheriv(algorithm, key, iv);
-  decipher.setAutoPadding(true);
-  const encryptedBuffer = Buffer.from(encryptedText, 'base64');
-  let decrypted = decipher.update(encryptedBuffer);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString('utf8');
-}
-
-/**
- * 加密对象数据
- * @param data 待加密对象
- * @param aesKey Base64 编码的 AES 密钥
- */
-export function aesEncrypt(data: object, aesKey: string): string {
-  const plainText = JSON.stringify(data);
-  return aesEncryptText(plainText, aesKey);
-}
-
-/**
- * 解密数据到对象
- * @param encryptedText Base64 编码的密文
- * @param aesKey Base64 编码的 AES 密钥
- */
-export function aesDecrypt(encryptedText: string, aesKey: string): object {
-  const plainText = aesDecryptText(encryptedText, aesKey);
-  return JSON.parse(plainText);
-}
 
 const formatDate = (date: Date) => {
   const pad = (n: number) => (n < 10 ? '0' + n : n);
@@ -210,6 +146,20 @@ const encryptAndSignature = async (config: any, options: any) => {
 }
 
 
+/**
+ * 验签
+ * @param config
+ * @param paramStr
+ * @param sign
+ * @returns
+ */
+const verifySignature = (config: any, paramStr: string, sign: string): boolean => {
+  return createVerify(config.signType === 'RSA2' ? 'RSA-SHA256' : 'RSA-SHA1')
+  .update(paramStr, 'utf8')
+  .verify(config.alipayPublicKey, sign, 'base64');
+}
+
+
 const getSignatureFields = (config: any, method: string, bizParams: any) => {
   let fields =  {
     method: method,
@@ -225,15 +175,17 @@ const getSignatureFields = (config: any, method: string, bizParams: any) => {
 
 
 const customResponseTransformer = (responseData: any, context: FetchContext, response: Response) => {
-  debug('customResponseTransformer', responseData, context, response)
+  debug('customResponseTransformer', responseData, context, '\n Response headers: \n', Object.fromEntries(response.headers.entries()));
   let alipayResponse: Record<string, any>;
-  if (isGateway(context.path)) { // exec
+  // exec
+  if (isGateway(context.path)) {
     const method = context.params.method;
     try {
       alipayResponse = JSON.parse(responseData);
     } catch (err) {
       throw new Error('Response data parsing error');
     }
+    const traceId = response.headers.get('trace_id') as string;
     const responseKey = `${method.replaceAll('.', '_')}_response`;
     let data = alipayResponse[responseKey] ?? alipayResponse.error_response;
     if (context.extParams?.needEncrypt) {
@@ -243,7 +195,19 @@ const customResponseTransformer = (responseData: any, context: FetchContext, res
         // 服务端解密错误，"sub_msg":"解密出错, 未知错误"
         // ignore
       }
+    } else {
+      // 不能同时加密和验签, 官方的SDK好像没有判断，这里做了处理
+      // 按字符串验签
+      if (context.extParams?.validateSign) {
+        const serverSign = alipayResponse.sign;
+        const validateStr = getSignStr(responseData, responseKey);
+        const result = verifySignature(context.config, validateStr, serverSign);
+        if (!result) {
+          throw new Error(`验签失败，服务端返回的 sign: '${serverSign}' 无效, validateStr: '${validateStr}' ${traceId}`);
+        }
+      }
     }
+    data.traceId = traceId;
     return data
   }
   // v3
@@ -283,7 +247,7 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     placeholders: {
       access_token: '{access_token}',
     },
-    // maxRetries: 0,
+    maxRetries: 0,
     config: {
       appId: config.appId,
       privateKey: config.privateKey,
@@ -314,7 +278,7 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     return options;
   });
 
-  sdk.rx('exec', async (config, method: string, params: Record<string, any>, options: any) => {
+  sdk.rx('exec', async (config, method: string, params: Record<string, any>, options?: Record<string, any>) => {
     let bizParams = {} as Record<string, any>;
     if (params.needEncrypt) {
       if (!config.encryptKey) {
@@ -340,7 +304,7 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     const body = {
       biz_content
     }
-    return sdk.post('/gateway.do', { body, params: execParams, dataType: 'text', extParams: { needEncrypt: params.needEncrypt } });
+    return sdk.post('/gateway.do', { body, params: execParams, dataType: 'text', extParams: { needEncrypt: params.needEncrypt, validateSign: params?.validateSign || options?.validateSign } });
   });
 
   sdk.rx('curl', async (config, method: string, path: string, options?: any) => {
@@ -412,22 +376,22 @@ export function alipaySdk(config: AlipaySDKConfig): AlipaySDK {
     `);
   });
 
-  sdk.rx('checkNotifySign', async (config, params: Record<string, any>) => {
+  sdk.rx('checkNotifySign', async (config, params: Record<string, any>, raw?: boolean) => {
     const sign = params.sign;
     delete params.sign;
-    const sortedParams = Object.keys(params)
-      .sort()
-      .map((key) => {
-        const value = typeof params[key] === 'object'
-          ? JSON.stringify(params[key])
-          : params[key];
-        return `${key}=${value}`;
-      });
-
-    const paramStr = sortedParams.join('&');
-    const verifier = createVerify(config.signType === 'RSA2' ? 'RSA-SHA256' : 'RSA-SHA1');
-    verifier.update(paramStr, 'utf8');
-    return verifier.verify(config.alipayPublicKey, sign, 'base64');
+    const notifyRSACheck = (obj: Record<string, any>) => {
+      const paramStr = formatParams(obj, raw);
+      return verifySignature(config, paramStr, sign);
+    }
+    const verifyResult = notifyRSACheck(params);
+    if (!verifyResult) {
+      /**
+       * 删除 sign_type 验一次
+       */
+      delete params.sign_type;
+      return notifyRSACheck(params);
+    }
+    return true;
   });
 
   return sdk;

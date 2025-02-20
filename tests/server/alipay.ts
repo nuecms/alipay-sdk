@@ -78,31 +78,64 @@ const routes = {
     }
   },
   'GET /exec/alipay': async (req, res) => {
-    const response = await sdk.exec("alipay.trade.pay", {
-      bizContent: {
-        out_trade_no: "201501320010101001",
-        total_amount: "88.88",
-        subject: "Iphone6 16G",
-        auth_code: "287500643347427217",
-        scene: "bar_code",
-      }
-    });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(response));
+    try {
+      const response = await sdk.exec("alipay.trade.pay", {
+        bizContent: {
+          out_trade_no: "201501320010101001",
+          total_amount: "88.88",
+          subject: "Iphone6 16G",
+          auth_code: "287500643347427217",
+          scene: "bar_code",
+        }
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } catch (error) {
+      console.log(error)
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(error.message);
+    }
   },
   'GET /encrypt/alipay': async (req, res) => {
-    const response = await sdk.exec("alipay.trade.pay", {
-      bizContent: {
-        out_trade_no: "20150320010101001",
-        total_amount: "88.88",
-        subject: "Iphone6 16G",
-        auth_code: "287500643347427217",
-        scene: "bar_code",
-      },
-      needEncrypt: true
-    });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(response));
+    try {
+
+      const response = await sdk.exec("alipay.trade.pay", {
+        bizContent: {
+          out_trade_no: "20150320010101001",
+          total_amount: "88.88",
+          subject: "Iphone6 16G",
+          auth_code: "287500643347427217",
+          scene: "bar_code",
+        },
+        needEncrypt: true
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } catch (error) {
+      console.log(error)
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(error.message);
+    }
+  },
+  'GET /validate/alipay': async (req, res) => {
+    try {
+      const response = await sdk.exec("alipay.trade.pay", {
+        bizContent: {
+          out_trade_no: "20150320010101001",
+          total_amount: "88.88",
+          subject: "Iphone6 16G",
+          auth_code: "287500643347427217",
+          scene: "bar_code",
+        },
+        validateSign: true
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    } catch (error) {
+      console.log(error)
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(error.message);
+    }
   }
 
 };
