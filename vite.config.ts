@@ -5,11 +5,14 @@ import dts from 'vite-plugin-dts'
 
 // Vite configuration for library development
 export default defineConfig({
-  plugins: [tsconfigPaths(), dts()], // Use TypeScript paths plugin
+  plugins: [tsconfigPaths(), dts({
+    insertTypesEntry: true,
+    rollupTypes: true
+  })], // Use TypeScript paths plugin
   build: {
     lib: {
       entry: path.resolve(__dirname, 'src/index.ts'), // Entry point for the library
-      // name: 'WxSDK',                            // Global variable for UMD build
+      name: 'AlipaySDK',                            // Global variable for UMD build
       formats: ['es', 'cjs'],                 // Output formats
       fileName: (format) => {
         return format === 'es' ? 'index.esm.js' : 'index.js';
